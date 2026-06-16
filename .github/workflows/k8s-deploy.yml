@@ -116,6 +116,16 @@ jobs:
       - name: Create namespace if not exists
         run: kubectl apply -f k8s/namespace.yml
 
+      - name: Create Docker Hub pull secret
+        run: |
+          kubectl create secret docker-registry dockerhub-pull-secret \
+            --docker-server=https://index.docker.io/v1/ \
+            --docker-username=${{ secrets.DOCKER_HUB_USERNAME }} \
+            --docker-password=${{ secrets.DOCKER_HUB_PASSWORD }} \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✓ Docker Hub pull secret created/updated"
+
       - name: Verify required secret exists
         run: |
           if ! kubectl get secret termix-secrets -n ${{ env.K8S_NAMESPACE }} > /dev/null 2>&1; then
