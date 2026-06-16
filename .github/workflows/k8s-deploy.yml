@@ -25,6 +25,7 @@ on:
 env:
   K8S_NAMESPACE: termix
   DEPLOYMENT_NAME: termix
+  CONTAINER_NAME: termix
 
 jobs:
   validate:
@@ -43,21 +44,18 @@ jobs:
             exit 1
           fi
 
-          # Determine if this is a rollback
           if [[ "${{ github.event.inputs.rollback }}" == "true" ]]; then
             echo "should_rollback=true" >> $GITHUB_OUTPUT
           else
             echo "should_rollback=false" >> $GITHUB_OUTPUT
           fi
 
-          # Determine build type (default to Production for push events)
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           if [[ -z "$BUILD_TYPE" ]]; then
             BUILD_TYPE="Production"
           fi
           echo "build_type=$BUILD_TYPE" >> $GITHUB_OUTPUT
 
-          # Set image tag
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "image_tag=$SHORT_SHA" >> $GITHUB_OUTPUT
 
@@ -118,18 +116,26 @@ jobs:
       - name: Create namespace if not exists
         run: kubectl apply -f k8s/namespace.yml
 
+      - name: Verify required secret exists
+        run: |
+          if ! kubectl get secret termix-secrets -n ${{ env.K8S_NAMESPACE }} > /dev/null 2>&1; then
+            echo "::error::Secret 'termix-secrets' not found in namespace '${{ env.K8S_NAMESPACE }}'."
+            echo "Create it before deploying:"
+            echo "  kubectl create secret generic termix-secrets --from-literal=KEY=VALUE -n ${{ env.K8S_NAMESPACE }}"
+            kubectl get secrets -n ${{ env.K8S_NAMESPACE }} || true
+            exit 1
+          fi
+          echo "✓ Secret 'termix-secrets' exists"
+
       - name: Apply Kubernetes manifests
         run: |
+          IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/${{ secrets.SERVICE_NAME }}:${{ needs.validate.outputs.image_tag }}"
           kubectl apply -f k8s/configmap.yml
           kubectl apply -f k8s/pvc.yml
           kubectl apply -f k8s/service.yml
-          kubectl apply -f k8s/deployment.yml
-
-      - name: Update deployment image
-        run: |
-          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
-            ${{ secrets.SERVICE_NAME }}=${{ secrets.DOCKER_HUB_USERNAME }}/${{ secrets.SERVICE_NAME }}:${{ needs.validate.outputs.image_tag }} \
-            -n ${{ env.K8S_NAMESPACE }}
+          # Substitute the image tag before applying so no placeholder image is ever deployed
+          sed "s|docker.io/DOCKER_HUB_USERNAME/termix:PIPELINE_IMAGE_TAG|${IMAGE}|g" k8s/deployment.yml \
+            | kubectl apply -f -
 
   verify:
     name: Verify Deployment
@@ -167,7 +173,7 @@ jobs:
         run: |
           EXPECTED_IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/${{ secrets.SERVICE_NAME }}:${{ needs.validate.outputs.image_tag }}"
           RUNNING_IMAGES=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} \
-            -l app=${{ secrets.SERVICE_NAME }} \
+            -l app=${{ env.CONTAINER_NAME }} \
             -o jsonpath='{.items[*].spec.containers[0].image}')
 
           for IMAGE in $RUNNING_IMAGES; do
@@ -177,6 +183,20 @@ jobs:
             fi
           done
           echo "✓ All pods running correct image: $EXPECTED_IMAGE"
+
+      - name: Diagnose failure
+        if: failure()
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide
+          echo "=== Recent Events ==="
+          kubectl get events -n ${{ env.K8S_NAMESPACE }} --sort-by='.lastTimestamp' | tail -30
+          echo "=== Pod Details ==="
+          kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=${{ env.CONTAINER_NAME }}
+          echo "=== PVC Status ==="
+          kubectl get pvc -n ${{ env.K8S_NAMESPACE }}
+          echo "=== Node Resources ==="
+          kubectl describe nodes | grep -A 8 "Allocated resources"
 
   rollback:
     name: Rollback Deployment
