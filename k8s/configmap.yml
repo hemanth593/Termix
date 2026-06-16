@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: termix-config
+  namespace: termix
+  labels:
+    app: termix
+data:
+  PORT: "8080"
+  NODE_ENV: "production"
+  GUACD_HOST: "guacd"
+  ENABLE_SSL: "false"
+  BASE_PATH: "/"
