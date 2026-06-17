@@ -142,6 +142,7 @@ jobs:
           IMAGE="${{ secrets.DOCKER_HUB_USERNAME }}/${{ secrets.SERVICE_NAME }}:${{ needs.validate.outputs.image_tag }}"
           kubectl apply -f k8s/configmap.yml
           kubectl apply -f k8s/pvc.yml
+          kubectl apply -f k8s/guacd.yml
           kubectl apply -f k8s/service.yml
           kubectl apply -f k8s/loadbalancer.yml
           # Substitute the image tag before applying so no placeholder image is ever deployed

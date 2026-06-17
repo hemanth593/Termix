@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+  namespace: termix
+  labels:
+    app: guacd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guacd
+  template:
+    metadata:
+      labels:
+        app: guacd
+    spec:
+      containers:
+        - name: guacd
+          image: guacamole/guacd:1.6.0
+          ports:
+            - containerPort: 4822
+              name: guacd
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            tcpSocket:
+              port: 4822
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 4822
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+  namespace: termix
+  labels:
+    app: guacd
+spec:
+  type: ClusterIP
+  selector:
+    app: guacd
+  ports:
+    - name: guacd
+      port: 4822
+      targetPort: 4822
+      protocol: TCP
