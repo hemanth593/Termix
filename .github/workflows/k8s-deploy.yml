@@ -143,9 +143,25 @@ jobs:
           kubectl apply -f k8s/configmap.yml
           kubectl apply -f k8s/pvc.yml
           kubectl apply -f k8s/service.yml
+          kubectl apply -f k8s/loadbalancer.yml
           # Substitute the image tag before applying so no placeholder image is ever deployed
           sed "s|docker.io/DOCKER_HUB_USERNAME/termix:PIPELINE_IMAGE_TAG|${IMAGE}|g" k8s/deployment.yml \
             | kubectl apply -f -
+
+      - name: Report LoadBalancer IP
+        run: |
+          echo "Waiting for LoadBalancer external IP..."
+          for i in $(seq 1 24); do
+            LB_IP=$(kubectl get svc termix-lb -n ${{ env.K8S_NAMESPACE }} \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            if [[ -n "$LB_IP" ]]; then
+              echo "✓ LoadBalancer IP: $LB_IP"
+              echo "::notice::Point termix.qovic.com A record → $LB_IP, then Let's Encrypt will provision automatically."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::warning::LoadBalancer IP not yet assigned after 2 minutes. Check: kubectl get svc termix-lb -n ${{ env.K8S_NAMESPACE }}"
 
   verify:
     name: Verify Deployment
