@@ -11,3 +11,4 @@ data:
   GUACD_HOST: "guacd"
   ENABLE_SSL: "false"
   BASE_PATH: "/"
+  DATA_DIR: "/app/data"
